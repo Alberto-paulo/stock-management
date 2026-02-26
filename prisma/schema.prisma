@@ -1,0 +1,190 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  GERENTE
+  FUNCIONARIO
+}
+
+enum OrderStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  COMPLETA
+  CONCLUIDA
+  CANCELADA
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(FUNCIONARIO)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchases Purchase[]
+  sales     Sale[]
+  orders    Order[]
+  notes     Note[]
+
+  @@map("users")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  buyPrice    Float    @map("buy_price")
+  sellPrice   Float    @map("sell_price")
+  quantity    Int      @default(0)
+  minQuantity Int      @default(5) @map("min_quantity")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  purchaseItems PurchaseItem[]
+  saleItems     SaleItem[]
+  orderItems    OrderItem[]
+
+  @@map("products")
+}
+
+model Purchase {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  total     Float    @default(0)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User           @relation(fields: [userId], references: [id])
+  items PurchaseItem[]
+
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id         String @id @default(cuid())
+  purchaseId String @map("purchase_id")
+  productId  String @map("product_id")
+  quantity   Int
+  unitPrice  Float  @map("unit_price")
+  total      Float
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@map("purchase_items")
+}
+
+model Sale {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  total     Float    @default(0)
+  profit    Float    @default(0)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id])
+  items SaleItem[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String @id @default(cuid())
+  saleId    String @map("sale_id")
+  productId String @map("product_id")
+  quantity  Int
+  unitPrice Float  @map("unit_price")
+  buyPrice  Float  @map("buy_price")
+  total     Float
+  profit    Float
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("sale_items")
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  userId    String      @map("user_id")
+  status    OrderStatus @default(PENDENTE)
+  total     Float       @default(0)
+  notes     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id])
+  items      OrderItem[]
+  orderNotes Note[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String @map("order_id")
+  productId String @map("product_id")
+  quantity  Int
+  unitPrice Float  @map("unit_price")
+  total     Float
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+model Debt {
+  id          String   @id @default(cuid())
+  clientName  String   @map("client_name")
+  totalAmount Float    @map("total_amount")
+  paidAmount  Float    @default(0) @map("paid_amount")
+  remaining   Float    @default(0)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  payments Payment[]
+
+  @@map("debts")
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  debtId    String   @map("debt_id")
+  amount    Float
+  notes     String?
+  createdAt DateTime @default(now())
+
+  debt Debt @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  orderId   String?  @map("order_id")
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@map("notes")
+}
