@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Textarea } from "@/components/ui/textarea";
 import { Toast } from "@/components/ui/toast";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
-import { Plus, Trash2, ClipboardList } from "lucide-react";
+import { Plus, Trash2, ClipboardList, ImageIcon } from "lucide-react";
 
 interface Product {
   id: string;
@@ -54,15 +54,42 @@ const statusVariants: Record<string, "warning" | "info" | "secondary" | "success
   CANCELADA: "destructive",
 };
 
+// Extrai URL de imagem das notas
+function extractImageUrl(notes: string | null): string | null {
+  if (!notes) return null;
+  const match = notes.match(/\[imagem: (https?:\/\/[^\]]+)\]/);
+  return match ? match[1] : null;
+}
+
+// Extrai item extra das notas
+function extractCustomItem(notes: string | null): string | null {
+  if (!notes) return null;
+  const match = notes.match(/\[Item extra: ([^\]]+)\]/);
+  return match ? match[1] : null;
+}
+
+// Limpa as notas removendo os tags internos
+function cleanNotes(notes: string | null): string {
+  if (!notes) return "";
+  return notes
+    .replace(/\[imagem: https?:\/\/[^\]]+\]/g, "")
+    .replace(/\[Item extra: [^\]]+\]/g, "")
+    .trim();
+}
+
 export default function OrdersPage() {
   const { data: session } = useSession();
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [imageViewUrl, setImageViewUrl] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [items, setItems] = useState<{ productId: string; quantity: string; unitPrice: string }[]>([]);
   const [notes, setNotes] = useState("");
+  const [customItemName, setCustomItemName] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
 
   const role = session?.user?.role;
@@ -108,20 +135,34 @@ export default function OrdersPage() {
     setItems(newItems);
   };
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const formData = new FormData();
+      formData.append("items", JSON.stringify(
+        items.map((i) => ({
+          productId: i.productId,
+          quantity: parseInt(i.quantity),
+          unitPrice: parseFloat(i.unitPrice),
+        }))
+      ));
+      if (notes) formData.append("notes", notes);
+      if (customItemName) formData.append("customItemName", customItemName);
+      if (imageFile) formData.append("image", imageFile);
+
       const res = await fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: items.map((i) => ({
-            productId: i.productId,
-            quantity: parseInt(i.quantity),
-            unitPrice: parseFloat(i.unitPrice),
-          })),
-          notes: notes || undefined,
-        }),
+        body: formData,
       });
 
       if (res.ok) {
@@ -129,6 +170,9 @@ export default function OrdersPage() {
         setDialogOpen(false);
         setItems([]);
         setNotes("");
+        setCustomItemName("");
+        setImageFile(null);
+        setImagePreview(null);
         fetchData();
       } else {
         const err = await res.json();
@@ -146,7 +190,6 @@ export default function OrdersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status }),
       });
-
       if (res.ok) {
         setToast({ message: "Status atualizado!", type: "success" });
         fetchData();
@@ -176,7 +219,14 @@ export default function OrdersPage() {
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => { setItems([{ productId: "", quantity: "1", unitPrice: "" }]); setDialogOpen(true); }}>
+            <Button onClick={() => {
+              setItems([{ productId: "", quantity: "1", unitPrice: "" }]);
+              setCustomItemName("");
+              setImageFile(null);
+              setImagePreview(null);
+              setNotes("");
+              setDialogOpen(true);
+            }}>
               <Plus className="mr-2 h-4 w-4" />
               Nova Encomenda
             </Button>
@@ -187,6 +237,7 @@ export default function OrdersPage() {
               <DialogDescription>Adicione os itens da encomenda</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Itens do stock */}
               <div className="max-h-64 space-y-3 overflow-y-auto">
                 {items.map((item, index) => (
                   <div key={index} className="flex items-end gap-2">
@@ -220,12 +271,49 @@ export default function OrdersPage() {
               </div>
               <Button type="button" variant="outline" size="sm" onClick={addItem}>
                 <Plus className="mr-1 h-3 w-3" />
-                Adicionar Item
+                Adicionar Item do Stock
               </Button>
+
+              {/* Item personalizado */}
+              <div className="rounded-md border border-dashed border-slate-300 p-3 space-y-2">
+                <Label className="text-sm font-medium">Item personalizado do cliente</Label>
+                <Input
+                  placeholder="Ex: Camisola azul tamanho M, Cadeira específica..."
+                  value={customItemName}
+                  onChange={(e) => setCustomItemName(e.target.value)}
+                />
+                <p className="text-xs text-slate-500">Descreve o item que o cliente deseja e não está no stock</p>
+              </div>
+
+              {/* Upload de fotografia */}
+              <div className="rounded-md border border-dashed border-slate-300 p-3 space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4" />
+                  Fotografia do item
+                </Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="cursor-pointer"
+                />
+                {imagePreview && (
+                  <div className="mt-2">
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="h-32 w-auto rounded-md object-cover border border-slate-200"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Observações */}
               <div className="space-y-2">
                 <Label>Observações</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas opcionais..." />
               </div>
+
               <div className="flex items-center justify-between">
                 <span className="text-lg font-bold">
                   Total: {formatCurrency(items.reduce((sum, i) => sum + (parseFloat(i.quantity) || 0) * (parseFloat(i.unitPrice) || 0), 0))}
@@ -268,6 +356,7 @@ export default function OrdersPage() {
         </Card>
       </div>
 
+      {/* Tabela */}
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -276,49 +365,81 @@ export default function OrdersPage() {
                 <TableHead>Data</TableHead>
                 <TableHead>Criador</TableHead>
                 <TableHead>Itens</TableHead>
+                <TableHead>Item Extra</TableHead>
+                <TableHead>Foto</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
                 {canManage && <TableHead>Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell>{formatDateTime(order.createdAt)}</TableCell>
-                  <TableCell>{order.user.name}</TableCell>
-                  <TableCell>
-                    {order.items.map((item, i) => (
-                      <div key={i} className="text-xs">
-                        {item.product?.name} x{item.quantity}
-                      </div>
-                    ))}
-                  </TableCell>
-                  <TableCell className="font-medium">{formatCurrency(order.total)}</TableCell>
-                  <TableCell>
-                    <Badge variant={statusVariants[order.status] || "secondary"}>
-                      {statusLabels[order.status] || order.status}
-                    </Badge>
-                  </TableCell>
-                  {canManage && (
+              {orders.map((order) => {
+                const imageUrl = extractImageUrl(order.notes);
+                const customItem = extractCustomItem(order.notes);
+                const cleanedNotes = cleanNotes(order.notes);
+                return (
+                  <TableRow key={order.id}>
+                    <TableCell>{formatDateTime(order.createdAt)}</TableCell>
+                    <TableCell>{order.user.name}</TableCell>
                     <TableCell>
-                      <select
-                        className="rounded border border-slate-200 px-2 py-1 text-xs"
-                        value={order.status}
-                        onChange={(e) => updateStatus(order.id, e.target.value)}
-                      >
-                        <option value="PENDENTE">Pendente</option>
-                        <option value="EM_ANDAMENTO">Em Andamento</option>
-                        <option value="COMPLETA">Completa</option>
-                        <option value="CONCLUIDA">Concluída</option>
-                        <option value="CANCELADA">Cancelada</option>
-                      </select>
+                      {order.items.map((item, i) => (
+                        <div key={i} className="text-xs">
+                          {item.product?.name} x{item.quantity}
+                        </div>
+                      ))}
+                      {cleanedNotes && (
+                        <div className="text-xs text-slate-500 mt-1">{cleanedNotes}</div>
+                      )}
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
+                    <TableCell>
+                      {customItem ? (
+                        <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1">
+                          {customItem}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {imageUrl ? (
+                        <button
+                          onClick={() => setImageViewUrl(imageUrl)}
+                          className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                        >
+                          <ImageIcon className="h-3 w-3" />
+                          Ver foto
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="font-medium">{formatCurrency(order.total)}</TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariants[order.status] || "secondary"}>
+                        {statusLabels[order.status] || order.status}
+                      </Badge>
+                    </TableCell>
+                    {canManage && (
+                      <TableCell>
+                        <select
+                          className="rounded border border-slate-200 px-2 py-1 text-xs"
+                          value={order.status}
+                          onChange={(e) => updateStatus(order.id, e.target.value)}
+                        >
+                          <option value="PENDENTE">Pendente</option>
+                          <option value="EM_ANDAMENTO">Em Andamento</option>
+                          <option value="COMPLETA">Completa</option>
+                          <option value="CONCLUIDA">Concluída</option>
+                          <option value="CANCELADA">Cancelada</option>
+                        </select>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })}
               {orders.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={canManage ? 6 : 5} className="text-center text-slate-500">
+                  <TableCell colSpan={canManage ? 8 : 7} className="text-center text-slate-500">
                     Nenhuma encomenda encontrada
                   </TableCell>
                 </TableRow>
@@ -327,6 +448,36 @@ export default function OrdersPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Modal para ver fotografia */}
+      {imageViewUrl && (
+        <Dialog open={!!imageViewUrl} onOpenChange={() => setImageViewUrl(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Fotografia do Item</DialogTitle>
+              <DialogDescription>Imagem enviada pelo cliente</DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-center">
+              <img
+                src={imageViewUrl}
+                alt="Item da encomenda"
+                className="max-h-[70vh] w-auto rounded-md object-contain"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              
+                href={imageViewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Abrir em nova aba
+              </a>
+              <Button variant="outline" onClick={() => setImageViewUrl(null)}>Fechar</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
