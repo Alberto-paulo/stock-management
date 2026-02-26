@@ -54,21 +54,18 @@ const statusVariants: Record<string, "warning" | "info" | "secondary" | "success
   CANCELADA: "destructive",
 };
 
-// Extrai URL de imagem das notas
 function extractImageUrl(notes: string | null): string | null {
   if (!notes) return null;
   const match = notes.match(/\[imagem: (https?:\/\/[^\]]+)\]/);
   return match ? match[1] : null;
 }
 
-// Extrai item extra das notas
 function extractCustomItem(notes: string | null): string | null {
   if (!notes) return null;
   const match = notes.match(/\[Item extra: ([^\]]+)\]/);
   return match ? match[1] : null;
 }
 
-// Limpa as notas removendo os tags internos
 function cleanNotes(notes: string | null): string {
   if (!notes) return "";
   return notes
@@ -149,13 +146,16 @@ export default function OrdersPage() {
     e.preventDefault();
     try {
       const formData = new FormData();
-      formData.append("items", JSON.stringify(
-        items.map((i) => ({
-          productId: i.productId,
-          quantity: parseInt(i.quantity),
-          unitPrice: parseFloat(i.unitPrice),
-        }))
-      ));
+      formData.append(
+        "items",
+        JSON.stringify(
+          items.map((i) => ({
+            productId: i.productId,
+            quantity: parseInt(i.quantity),
+            unitPrice: parseFloat(i.unitPrice),
+          }))
+        )
+      );
       if (notes) formData.append("notes", notes);
       if (customItemName) formData.append("customItemName", customItemName);
       if (imageFile) formData.append("image", imageFile);
@@ -219,14 +219,16 @@ export default function OrdersPage() {
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => {
-              setItems([{ productId: "", quantity: "1", unitPrice: "" }]);
-              setCustomItemName("");
-              setImageFile(null);
-              setImagePreview(null);
-              setNotes("");
-              setDialogOpen(true);
-            }}>
+            <Button
+              onClick={() => {
+                setItems([{ productId: "", quantity: "1", unitPrice: "" }]);
+                setCustomItemName("");
+                setImageFile(null);
+                setImagePreview(null);
+                setNotes("");
+                setDialogOpen(true);
+              }}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Nova Encomenda
             </Button>
@@ -251,19 +253,38 @@ export default function OrdersPage() {
                       >
                         <option value="">Selecione...</option>
                         {products.map((p) => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
                         ))}
                       </select>
                     </div>
                     <div className="w-24 space-y-1">
                       <Label className="text-xs">Qtd</Label>
-                      <Input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(index, "quantity", e.target.value)} required />
+                      <Input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => updateItem(index, "quantity", e.target.value)}
+                        required
+                      />
                     </div>
                     <div className="w-32 space-y-1">
                       <Label className="text-xs">Preço Unit.</Label>
-                      <Input type="number" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(index, "unitPrice", e.target.value)} required />
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={item.unitPrice}
+                        onChange={(e) => updateItem(index, "unitPrice", e.target.value)}
+                        required
+                      />
                     </div>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(index)}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeItem(index)}
+                    >
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
                   </div>
@@ -275,19 +296,23 @@ export default function OrdersPage() {
               </Button>
 
               {/* Item personalizado */}
-              <div className="rounded-md border border-dashed border-slate-300 p-3 space-y-2">
-                <Label className="text-sm font-medium">Item personalizado do cliente</Label>
+              <div className="rounded-md border border-dashed border-amber-300 bg-amber-50 p-3 space-y-2">
+                <Label className="text-sm font-medium text-amber-800">
+                  Item personalizado do cliente
+                </Label>
                 <Input
                   placeholder="Ex: Camisola azul tamanho M, Cadeira específica..."
                   value={customItemName}
                   onChange={(e) => setCustomItemName(e.target.value)}
                 />
-                <p className="text-xs text-slate-500">Descreve o item que o cliente deseja e não está no stock</p>
+                <p className="text-xs text-amber-600">
+                  Descreve o item que o cliente deseja e não está no stock
+                </p>
               </div>
 
               {/* Upload de fotografia */}
-              <div className="rounded-md border border-dashed border-slate-300 p-3 space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-2">
+              <div className="rounded-md border border-dashed border-blue-300 bg-blue-50 p-3 space-y-2">
+                <Label className="flex items-center gap-2 text-sm font-medium text-blue-800">
                   <ImageIcon className="h-4 w-4" />
                   Fotografia do item
                 </Label>
@@ -302,7 +327,7 @@ export default function OrdersPage() {
                     <img
                       src={imagePreview}
                       alt="Preview"
-                      className="h-32 w-auto rounded-md object-cover border border-slate-200"
+                      className="h-32 w-auto rounded-md border border-blue-200 object-cover"
                     />
                   </div>
                 )}
@@ -311,12 +336,23 @@ export default function OrdersPage() {
               {/* Observações */}
               <div className="space-y-2">
                 <Label>Observações</Label>
-                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas opcionais..." />
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Notas opcionais..."
+                />
               </div>
 
               <div className="flex items-center justify-between">
                 <span className="text-lg font-bold">
-                  Total: {formatCurrency(items.reduce((sum, i) => sum + (parseFloat(i.quantity) || 0) * (parseFloat(i.unitPrice) || 0), 0))}
+                  Total:{" "}
+                  {formatCurrency(
+                    items.reduce(
+                      (sum, i) =>
+                        sum + (parseFloat(i.quantity) || 0) * (parseFloat(i.unitPrice) || 0),
+                      0
+                    )
+                  )}
                 </span>
                 <Button type="submit">Criar Encomenda</Button>
               </div>
@@ -325,6 +361,7 @@ export default function OrdersPage() {
         </Dialog>
       </div>
 
+      {/* Stats + Filtro */}
       <div className="flex items-center gap-4">
         <Card className="flex-1">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -413,7 +450,9 @@ export default function OrdersPage() {
                         <span className="text-xs text-slate-400">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="font-medium">{formatCurrency(order.total)}</TableCell>
+                    <TableCell className="font-medium">
+                      {formatCurrency(order.total)}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={statusVariants[order.status] || "secondary"}>
                         {statusLabels[order.status] || order.status}
@@ -439,7 +478,10 @@ export default function OrdersPage() {
               })}
               {orders.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={canManage ? 8 : 7} className="text-center text-slate-500">
+                  <TableCell
+                    colSpan={canManage ? 8 : 7}
+                    className="text-center text-slate-500"
+                  >
                     Nenhuma encomenda encontrada
                   </TableCell>
                 </TableRow>
@@ -465,7 +507,7 @@ export default function OrdersPage() {
               />
             </div>
             <div className="flex justify-end gap-2">
-              
+              <a
                 href={imageViewUrl}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -473,13 +515,17 @@ export default function OrdersPage() {
               >
                 Abrir em nova aba
               </a>
-              <Button variant="outline" onClick={() => setImageViewUrl(null)}>Fechar</Button>
+              <Button variant="outline" onClick={() => setImageViewUrl(null)}>
+                Fechar
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
       )}
 
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      {toast && (
+        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+      )}
     </div>
   );
 }
