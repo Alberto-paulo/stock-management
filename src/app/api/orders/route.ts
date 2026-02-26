@@ -50,7 +50,6 @@ export async function POST(req: NextRequest) {
       imageUrl = url;
     }
 
-    // Monta as notas finais incluindo item personalizado e imagem
     let finalNotes = notes || "";
     if (customItemName) {
       finalNotes = `[Item extra: ${customItemName}]\n${finalNotes}`.trim();
@@ -107,7 +106,10 @@ export async function PUT(req: NextRequest) {
 
   const { id, status } = await req.json();
   if (!id || !status) {
-    return NextResponse.json({ error: "ID e status são obrigatórios" }, { status: 400 });
+    return NextResponse.json(
+      { error: "ID e status são obrigatórios" },
+      { status: 400 }
+    );
   }
 
   const order = await prisma.order.update({
@@ -116,4 +118,29 @@ export async function PUT(req: NextRequest) {
   });
 
   return NextResponse.json(order);
+}
+
+export async function DELETE(req: NextRequest) {
+  const { authorized, response, session } = await checkAuth();
+  if (!authorized || !session) return response;
+
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Apenas administradores podem apagar encomendas" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "ID é obrigatório" }, { status: 400 });
+  }
+
+  const order = await prisma.order.findUnique({ where: { id } });
+  if (!order) {
+    return NextResponse.json({ error: "Encomenda não encontrada" }, { status: 404 });
+  }
+
+  await prisma.order.delete({ where: { id } });
+
+  return NextResponse.json({ success: true });
 }
