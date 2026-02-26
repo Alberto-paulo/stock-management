@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { checkAuth } from "@/lib/rbac";
-import { orderSchema, orderStatusSchema } from "@/lib/validations";
 
 export async function GET(req: NextRequest) {
   const { authorized, response, session } = await checkAuth();
@@ -11,14 +11,7 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status");
 
   const where: Record<string, unknown> = {};
-
-  if (session.user.role === "FUNCIONARIO") {
-    where.userId = session.user.id;
-  }
-
-  if (status) {
-    where.status = status;
-  }
+  if (status) where.status = status;
 
   const orders = await prisma.order.findMany({
     where,
@@ -39,39 +32,58 @@ export async function POST(req: NextRequest) {
   if (!authorized || !session) return response;
 
   try {
-    const body = await req.json();
-    const parsed = orderSchema.safeParse(body);
+    const formData = await req.formData();
+    const itemsRaw = formData.get("items") as string;
+    const notes = formData.get("notes") as string | null;
+    const customItemName = formData.get("customItemName") as string | null;
+    const imageFile = formData.get("image") as File | null;
 
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.message },
-        { status: 400 }
+    const items = JSON.parse(itemsRaw || "[]");
+
+    let imageUrl: string | null = null;
+    if (imageFile && imageFile.size > 0) {
+      const { url } = await put(
+        `orders/${Date.now()}-${imageFile.name}`,
+        imageFile,
+        { access: "public" }
       );
+      imageUrl = url;
     }
 
-    const { items, notes } = parsed.data;
+    // Monta as notas finais incluindo item personalizado e imagem
+    let finalNotes = notes || "";
+    if (customItemName) {
+      finalNotes = `[Item extra: ${customItemName}]\n${finalNotes}`.trim();
+    }
+    if (imageUrl) {
+      finalNotes = `${finalNotes}\n[imagem: ${imageUrl}]`.trim();
+    }
 
-    let totalAmount = 0;
-    const orderItems = items.map((item) => {
-      const itemTotal = item.quantity * item.unitPrice;
-      totalAmount += itemTotal;
-      return {
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        total: itemTotal,
-      };
-    });
+    const total = items.reduce(
+      (sum: number, i: { quantity: number; unitPrice: number }) =>
+        sum + i.quantity * i.unitPrice,
+      0
+    );
 
     const order = await prisma.order.create({
       data: {
         userId: session.user.id,
-        total: totalAmount,
-        notes,
-        items: { create: orderItems },
+        total,
+        notes: finalNotes || null,
+        items: {
+          create: items.map((i: { productId: string; quantity: number; unitPrice: number }) => ({
+            productId: i.productId,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            total: i.quantity * i.unitPrice,
+          })),
+        },
       },
       include: {
-        items: { include: { product: { select: { name: true } } } },
+        user: { select: { name: true } },
+        items: {
+          include: { product: { select: { name: true } } },
+        },
       },
     });
 
@@ -86,72 +98,22 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const { authorized, response } = await checkAuth(["ADMIN", "GERENTE"]);
-  if (!authorized) return response;
+  const { authorized, response, session } = await checkAuth();
+  if (!authorized || !session) return response;
 
-  try {
-    const body = await req.json();
-    const { id, status } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: "ID é obrigatório" }, { status: 400 });
-    }
-
-    const parsed = orderStatusSchema.safeParse({ status });
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Status inválido" },
-        { status: 400 }
-      );
-    }
-
-    const order = await prisma.order.findUnique({
-      where: { id },
-      include: { items: true },
-    });
-
-    if (!order) {
-      return NextResponse.json(
-        { error: "Encomenda não encontrada" },
-        { status: 404 }
-      );
-    }
-
-    if (status === "CONCLUIDA" && order.status !== "CONCLUIDA") {
-      await prisma.$transaction(async (tx) => {
-        for (const item of order.items) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { quantity: { decrement: item.quantity } },
-          });
-        }
-
-        await tx.order.update({
-          where: { id },
-          data: { status },
-        });
-      });
-    } else {
-      await prisma.order.update({
-        where: { id },
-        data: { status },
-      });
-    }
-
-    const updated = await prisma.order.findUnique({
-      where: { id },
-      include: {
-        items: { include: { product: { select: { name: true } } } },
-        user: { select: { name: true } },
-      },
-    });
-
-    return NextResponse.json(updated);
-  } catch (error) {
-    console.error("Order update error:", error);
-    return NextResponse.json(
-      { error: "Erro ao atualizar encomenda" },
-      { status: 500 }
-    );
+  if (session.user.role === "FUNCIONARIO") {
+    return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
+
+  const { id, status } = await req.json();
+  if (!id || !status) {
+    return NextResponse.json({ error: "ID e status são obrigatórios" }, { status: 400 });
+  }
+
+  const order = await prisma.order.update({
+    where: { id },
+    data: { status },
+  });
+
+  return NextResponse.json(order);
 }
