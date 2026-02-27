@@ -118,19 +118,34 @@ model SaleItem {
 }
 
 model Order {
-  id        String      @id @default(cuid())
-  userId    String      @map("user_id")
-  status    OrderStatus @default(PENDENTE)
-  total     Float       @default(0)
-  notes     String?
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id          String      @id @default(cuid())
+  userId      String      @map("user_id")
+  status      OrderStatus @default(PENDENTE)
+  total       Float       @default(0)
+  notes       String?
+  clientName  String?     @map("client_name")
+  clientPhone String?     @map("client_phone")
+  description String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
-  user       User        @relation(fields: [userId], references: [id])
+  user       User         @relation(fields: [userId], references: [id])
   items      OrderItem[]
   orderNotes Note[]
+  images     OrderImage[]
 
   @@map("orders")
+}
+
+model OrderImage {
+  id        String   @id @default(cuid())
+  orderId   String   @map("order_id")
+  url       String
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_images")
 }
 
 model OrderItem {
