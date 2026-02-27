@@ -12,7 +12,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Textarea } from "@/components/ui/textarea";
 import { Toast } from "@/components/ui/toast";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
-import { Plus, Trash2, ClipboardList, ImageIcon, Upload, X, Eye, AlertTriangle, Pencil, Phone, User, FileText } from "lucide-react";
+import {
+  Plus, Trash2, ClipboardList, ImageIcon,
+  Upload, X, Eye, AlertTriangle, Pencil, Phone, User, FileText
+} from "lucide-react";
 
 interface Product {
   id: string;
@@ -47,11 +50,17 @@ interface Order {
   images: OrderImage[];
 }
 
+interface ItemRow {
+  productId: string;
+  quantity: string;
+  unitPrice: string;
+}
+
 const statusLabels: Record<string, string> = {
   PENDENTE: "Pendente",
   EM_ANDAMENTO: "Em Andamento",
   COMPLETA: "Completa",
-  CONCLUIDA: "Concluída",
+  CONCLUIDA: "Concluida",
   CANCELADA: "Cancelada",
 };
 
@@ -67,30 +76,32 @@ export default function OrdersPage() {
   const { data: session } = useSession();
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [dialogOpen, setDialogOpen] = useState<boolean>(false);
   const [imageViewUrl, setImageViewUrl] = useState<string | null>(null);
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const [editOrder, setEditOrder] = useState<Order | null>(null);
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  // Campos do formulário de criação
-  const [items, setItems] = useState<{ productId: string; quantity: string; unitPrice: string }[]>([]);
-  const [notes, setNotes] = useState("");
-  const [clientName, setClientName] = useState("");
-  const [clientPhone, setClientPhone] = useState("");
-  const [description, setDescription] = useState("");
+  // Form criar
+  const [items, setItems] = useState<ItemRow[]>([]);
+  const [customQuantity, setCustomQuantity] = useState<string>("1");
+  const [customUnitPrice, setCustomUnitPrice] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+  const [clientName, setClientName] = useState<string>("");
+  const [clientPhone, setClientPhone] = useState<string>("");
+  const [description, setDescription] = useState<string>("");
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [statusFilter, setStatusFilter] = useState<string>("");
 
-  // Campos do formulário de edição
-  const [editClientName, setEditClientName] = useState("");
-  const [editClientPhone, setEditClientPhone] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editNotes, setEditNotes] = useState("");
+  // Form editar
+  const [editClientName, setEditClientName] = useState<string>("");
+  const [editClientPhone, setEditClientPhone] = useState<string>("");
+  const [editDescription, setEditDescription] = useState<string>("");
+  const [editNotes, setEditNotes] = useState<string>("");
   const [editImageFiles, setEditImageFiles] = useState<File[]>([]);
   const [editImagePreviews, setEditImagePreviews] = useState<string[]>([]);
   const [editRemoveImageIds, setEditRemoveImageIds] = useState<string[]>([]);
@@ -119,6 +130,8 @@ export default function OrdersPage() {
 
   const resetForm = () => {
     setItems([]);
+    setCustomQuantity("1");
+    setCustomUnitPrice("");
     setNotes("");
     setClientName("");
     setClientPhone("");
@@ -128,100 +141,136 @@ export default function OrdersPage() {
   };
 
   const addItem = () => setItems([...items, { productId: "", quantity: "1", unitPrice: "" }]);
-  const removeItem = (index: number) => setItems(items.filter((_, i) => i !== index));
+
+  const removeItem = (index: number) => {
+    setItems(items.filter((_item: ItemRow, i: number) => i !== index));
+  };
 
   const updateItem = (index: number, field: string, value: string) => {
-    const newItems = [...items];
+    const newItems: ItemRow[] = [...items];
     newItems[index] = { ...newItems[index], [field]: value };
     if (field === "productId") {
-      const product = products.find((p) => p.id === value);
+      const product = products.find((p: Product) => p.id === value);
       if (product) newItems[index].unitPrice = product.sellPrice.toString();
     }
     setItems(newItems);
   };
 
+  const loadPreviews = (
+    newFiles: File[],
+    baseIndex: number,
+    currentPreviews: string[],
+    setPreviews: (p: string[]) => void
+  ) => {
+    const result: string[] = [...currentPreviews];
+    let loadedCount = 0;
+    if (newFiles.length === 0) return;
+    newFiles.forEach((file: File, idx: number) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        result[baseIndex + idx] = reader.result as string;
+        loadedCount += 1;
+        if (loadedCount === newFiles.length) {
+          setPreviews([...result]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const processFiles = (
-  files: File[],
-  existingFiles: File[],
-  existingPreviews: string[],
-  setFiles: (f: File[]) => void,
-  setPreviews: (p: string[]) => void,
-  limit = 10
-) => {
-  const validFiles = files.filter(
-    (f) => f.type.startsWith("image/") && f.size <= 10 * 1024 * 1024
-  );
-  const combined = [...existingFiles, ...validFiles].slice(0, limit);
-  setFiles(combined);
-
-  const newPreviews = [...existingPreviews];
-  const newFiles = combined.slice(existingFiles.length);
-
-  newFiles.forEach((file, idx) => {
-    const i = existingFiles.length + idx;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      newPreviews[i] = reader.result as string;
-      setPreviews([...newPreviews]);
-    };
-    reader.readAsDataURL(file);
-  });
-};
+    incoming: File[],
+    existing: File[],
+    existingPreviews: string[],
+    setFiles: (f: File[]) => void,
+    setPreviews: (p: string[]) => void,
+    limit: number
+  ) => {
+    const valid: File[] = incoming.filter(
+      (f: File) => f.type.startsWith("image/") && f.size <= 10 * 1024 * 1024
+    );
+    const combined: File[] = [...existing, ...valid].slice(0, limit);
+    setFiles(combined);
+    const brandNew: File[] = combined.slice(existing.length);
+    loadPreviews(brandNew, existing.length, existingPreviews, setPreviews);
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    processFiles(files, imageFiles, imagePreviews, setImageFiles, setImagePreviews);
+    const files: File[] = Array.from(e.target.files || []);
+    processFiles(files, imageFiles, imagePreviews, setImageFiles, setImagePreviews, 10);
   };
 
   const handleEditImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    const existingCount = (editOrder?.images.length || 0) - editRemoveImageIds.length;
-    const limit = 10 - existingCount;
-    processFiles(files, editImageFiles, editImagePreviews, setEditImageFiles, setEditImagePreviews, limit);
+    const files: File[] = Array.from(e.target.files || []);
+    const existingCount: number = (editOrder?.images.length || 0) - editRemoveImageIds.length;
+    const limit: number = 10 - existingCount;
+    processFiles(files, editImageFiles, editImagePreviews, setEditImageFiles, setEditImagePreviews, Math.max(0, limit));
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files);
-    processFiles(files, imageFiles, imagePreviews, setImageFiles, setImagePreviews);
+    const files: File[] = Array.from(e.dataTransfer.files);
+    processFiles(files, imageFiles, imagePreviews, setImageFiles, setImagePreviews, 10);
   };
 
   const removeNewImage = (index: number) => {
-    setImageFiles(prev => prev.filter((_, i) => i !== index));
-    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+    setImageFiles((f: File[]) => f.filter((_: File, i: number) => i !== index));
+    setImagePreviews((p: string[]) => p.filter((_: string, i: number) => i !== index));
   };
 
   const removeNewEditImage = (index: number) => {
-    setEditImageFiles(prev => prev.filter((_, i) => i !== index));
-    setEditImagePreviews(prev => prev.filter((_, i) => i !== index));
+    setEditImageFiles((f: File[]) => f.filter((_: File, i: number) => i !== index));
+    setEditImagePreviews((p: string[]) => p.filter((_: string, i: number) => i !== index));
   };
 
   const toggleRemoveExistingImage = (imageId: string) => {
-    setEditRemoveImageIds(prev =>
-      prev.includes(imageId) ? prev.filter(id => id !== imageId) : [...prev, imageId]
+    setEditRemoveImageIds((ids: string[]) =>
+      ids.includes(imageId)
+        ? ids.filter((id: string) => id !== imageId)
+        : [...ids, imageId]
     );
   };
+
+  // Calculo do total
+  const stockTotal = items.reduce(
+    (sum: number, i: ItemRow) =>
+      sum + (parseFloat(i.quantity) || 0) * (parseFloat(i.unitPrice) || 0),
+    0
+  );
+  const customTotal =
+    (parseFloat(customQuantity) || 0) * (parseFloat(customUnitPrice) || 0);
+  const grandTotal = stockTotal + customTotal;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const allItems = [
+        ...items
+          .filter((i: ItemRow) => i.productId)
+          .map((i: ItemRow) => ({
+            productId: i.productId,
+            quantity: parseInt(i.quantity),
+            unitPrice: parseFloat(i.unitPrice),
+          })),
+      ];
+
       const formData = new FormData();
-      formData.append("items", JSON.stringify(
-        items.filter(i => i.productId).map((i) => ({
-          productId: i.productId,
-          quantity: parseInt(i.quantity),
-          unitPrice: parseFloat(i.unitPrice),
-        }))
-      ));
+      formData.append("items", JSON.stringify(allItems));
       if (notes) formData.append("notes", notes);
       if (clientName) formData.append("clientName", clientName);
       if (clientPhone) formData.append("clientPhone", clientPhone);
-      if (description) formData.append("description", description);
-      imageFiles.forEach(file => formData.append("images", file));
+
+      // Guardar descricao + quantidade/preco custom nas notas se nao tiver produto stock
+      let finalDescription = description;
+      if (customUnitPrice && parseFloat(customUnitPrice) > 0) {
+        finalDescription += `\n[Qtd: ${customQuantity} | Preco unit.: ${customUnitPrice}]`;
+      }
+      if (finalDescription) formData.append("description", finalDescription.trim());
+
+      imageFiles.forEach((file: File) => formData.append("images", file));
 
       const res = await fetch("/api/orders", { method: "POST", body: formData });
-
       if (res.ok) {
         setToast({ message: "Encomenda criada com sucesso!", type: "success" });
         setDialogOpen(false);
@@ -247,10 +296,9 @@ export default function OrdersPage() {
       if (editDescription) formData.append("description", editDescription);
       if (editNotes) formData.append("notes", editNotes);
       formData.append("removeImageIds", JSON.stringify(editRemoveImageIds));
-      editImageFiles.forEach(file => formData.append("images", file));
+      editImageFiles.forEach((file: File) => formData.append("images", file));
 
       const res = await fetch("/api/orders", { method: "PUT", body: formData });
-
       if (res.ok) {
         setToast({ message: "Encomenda atualizada!", type: "success" });
         setEditOrder(null);
@@ -319,76 +367,16 @@ export default function OrdersPage() {
     );
   }
 
-  const ImageUploadArea = ({
-    previews, onDrop, onDragOver, onDragLeave, onChange, onRemove, isDrag, accept, label
-  }: {
-    previews: string[];
-    onDrop?: (e: React.DragEvent<HTMLDivElement>) => void;
-    onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void;
-    onDragLeave?: () => void;
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    onRemove: (i: number) => void;
-    isDrag?: boolean;
-    accept?: string;
-    label?: string;
-  }) => (
-    <div className="space-y-3">
-      <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-        <ImageIcon className="h-4 w-4 text-slate-500" />
-        {label || "Fotografias do item"} ({previews.length}/10)
-      </Label>
-      {previews.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
-          {previews.map((src, i) => (
-            <div key={i} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-square">
-              <img src={src} alt={`foto ${i + 1}`} className="w-full h-full object-cover" />
-              <button
-                type="button"
-                onClick={() => onRemove(i)}
-                className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-red-600 transition-colors"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      {previews.length < 10 && (
-        <div
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
-          className={`relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 transition-all cursor-pointer
-            ${isDrag ? "border-blue-400 bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-slate-100"}`}
-        >
-          <input
-            type="file"
-            accept={accept || "image/*"}
-            multiple
-            onChange={onChange}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          />
-          <div className="flex flex-col items-center gap-2 text-center pointer-events-none">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200">
-              <Upload className="h-5 w-5 text-slate-500" />
-            </div>
-            <p className="text-sm font-medium text-slate-700">Arrastar ou clicar para adicionar</p>
-            <p className="text-xs text-slate-400">PNG, JPG, WEBP até 10MB cada</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <div className="space-y-6">
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Encomendas</h1>
           <p className="text-slate-500">Gerir encomendas e acompanhar status</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+        <Dialog open={dialogOpen} onOpenChange={(open: boolean) => { setDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button onClick={() => setDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
@@ -405,21 +393,20 @@ export default function OrdersPage() {
               {/* Dados do cliente */}
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
                 <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  Dados do Cliente
+                  <User className="h-4 w-4" /> Dados do Cliente
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs text-slate-500">Nome do cliente</Label>
                     <Input
-                      placeholder="Ex: João Silva"
+                      placeholder="Ex: Joao Silva"
                       value={clientName}
                       onChange={(e) => setClientName(e.target.value)}
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs text-slate-500 flex items-center gap-1">
-                      <Phone className="h-3 w-3" /> Telemóvel
+                      <Phone className="h-3 w-3" /> Telemovel
                     </Label>
                     <Input
                       placeholder="Ex: +258 84 000 0000"
@@ -430,34 +417,65 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              {/* Descrição da encomenda */}
+              {/* Descricao */}
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2">
                 <Label className="text-sm font-semibold text-blue-800 flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Descrição da Encomenda
+                  <FileText className="h-4 w-4" /> Descricao da Encomenda
                 </Label>
                 <Textarea
-                  placeholder="Descreve detalhadamente o que o cliente pretende encomendas. Ex: Camisola azul tamanho M com bordado no peito, tecido algodão..."
+                  placeholder="Descreve detalhadamente o que o cliente pretende. Ex: Camisola azul tamanho M com bordado no peito..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="resize-none bg-white border-blue-200 min-h-[80px]"
                   rows={3}
                 />
-                <p className="text-xs text-blue-600">
-                  Inclui cor, tamanho, material, quantidade e outros detalhes relevantes
+                <p className="text-xs text-blue-600">Inclui cor, tamanho, material, quantidade e outros detalhes</p>
+              </div>
+
+              {/* Quantidade e preco para encomendas sem stock */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                <p className="text-sm font-semibold text-slate-700">
+                  Quantidade e Valor <span className="text-xs font-normal text-slate-400">(para itens sem stock)</span>
                 </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-500">Quantidade</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="1"
+                      value={customQuantity}
+                      onChange={(e) => setCustomQuantity(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-500">Preco Unitario</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={customUnitPrice}
+                      onChange={(e) => setCustomUnitPrice(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {customUnitPrice && parseFloat(customUnitPrice) > 0 && (
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                    <span className="text-xs text-slate-500">Subtotal deste item</span>
+                    <span className="text-sm font-semibold">{formatCurrency(customTotal)}</span>
+                  </div>
+                )}
               </div>
 
               {/* Produtos do stock (opcional) */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-semibold text-slate-700">
-                    Produtos do Stock <span className="text-xs font-normal text-slate-400">(opcional)</span>
-                  </Label>
-                </div>
+                <Label className="text-sm font-semibold text-slate-700">
+                  Produtos do Stock <span className="text-xs font-normal text-slate-400">(opcional)</span>
+                </Label>
                 {items.length > 0 && (
                   <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
-                    {items.map((item, index) => (
+                    {items.map((item: ItemRow, index: number) => (
                       <div key={index} className="flex items-end gap-2 rounded-lg bg-slate-50 p-2">
                         <div className="flex-1 space-y-1">
                           <Label className="text-xs text-slate-500">Produto</Label>
@@ -467,23 +485,36 @@ export default function OrdersPage() {
                             onChange={(e) => updateItem(index, "productId", e.target.value)}
                           >
                             <option value="">Selecione...</option>
-                            {products.map((p) => (
+                            {products.map((p: Product) => (
                               <option key={p.id} value={p.id}>{p.name}</option>
                             ))}
                           </select>
                         </div>
                         <div className="w-20 space-y-1">
                           <Label className="text-xs text-slate-500">Qtd</Label>
-                          <Input type="number" min="1" value={item.quantity}
-                            onChange={(e) => updateItem(index, "quantity", e.target.value)} className="h-9" />
+                          <Input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => updateItem(index, "quantity", e.target.value)}
+                            className="h-9"
+                          />
                         </div>
                         <div className="w-28 space-y-1">
-                          <Label className="text-xs text-slate-500">Preço Unit.</Label>
-                          <Input type="number" step="0.01" value={item.unitPrice}
-                            onChange={(e) => updateItem(index, "unitPrice", e.target.value)} className="h-9" />
+                          <Label className="text-xs text-slate-500">Preco Unit.</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={item.unitPrice}
+                            onChange={(e) => updateItem(index, "unitPrice", e.target.value)}
+                            className="h-9"
+                          />
                         </div>
-                        <button type="button" onClick={() => removeItem(index)}
-                          className="mb-0.5 rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+                        <button
+                          type="button"
+                          onClick={() => removeItem(index)}
+                          className="mb-0.5 rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
@@ -497,19 +528,56 @@ export default function OrdersPage() {
               </div>
 
               {/* Upload de fotografias */}
-              <ImageUploadArea
-                previews={imagePreviews}
-                onDrop={handleDrop}
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                onDragLeave={() => setIsDragging(false)}
-                onChange={handleImageChange}
-                onRemove={removeNewImage}
-                isDrag={isDragging}
-              />
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4 text-slate-500" />
+                  Fotografias do item ({imagePreviews.length}/10)
+                </Label>
+                {imagePreviews.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {imagePreviews.map((src: string, i: number) => (
+                      <div key={i} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-square">
+                        <img src={src} alt={`foto ${i + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeNewImage(i)}
+                          className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-red-600 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {imagePreviews.length < 10 && (
+                  <div
+                    onDrop={handleDrop}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    className={`relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 transition-all cursor-pointer
+                      ${isDragging ? "border-blue-400 bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-slate-100"}`}
+                  >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageChange}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <div className="flex flex-col items-center gap-2 text-center pointer-events-none">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200">
+                        <Upload className="h-5 w-5 text-slate-500" />
+                      </div>
+                      <p className="text-sm font-medium text-slate-700">Arrastar ou clicar para adicionar fotos</p>
+                      <p className="text-xs text-slate-400">PNG, JPG, WEBP ate 10MB cada</p>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-              {/* Observações */}
+              {/* Observacoes */}
               <div className="space-y-2">
-                <Label className="text-sm font-semibold text-slate-700">Observações adicionais</Label>
+                <Label className="text-sm font-semibold text-slate-700">Observacoes adicionais</Label>
                 <Textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -519,20 +587,22 @@ export default function OrdersPage() {
                 />
               </div>
 
-              {/* Total + Submit */}
-              <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+              {/* Total final + Submit */}
+              <div className="rounded-xl bg-slate-900 px-4 py-3 flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-500">Total estimado</p>
-                  <span className="text-xl font-bold text-slate-900">
-                    {formatCurrency(items.reduce((sum, i) =>
-                      sum + (parseFloat(i.quantity) || 0) * (parseFloat(i.unitPrice) || 0), 0))}
-                  </span>
+                  <p className="text-xs text-slate-400">Total da encomenda</p>
+                  <span className="text-2xl font-bold text-white">{formatCurrency(grandTotal)}</span>
                 </div>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit">Criar Encomenda</Button>
+                  <Button type="button" variant="outline" className="bg-transparent text-white border-slate-600 hover:bg-slate-800 hover:text-white" onClick={() => setDialogOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" className="bg-white text-slate-900 hover:bg-slate-100">
+                    Criar Encomenda
+                  </Button>
                 </div>
               </div>
+
             </form>
           </DialogContent>
         </Dialog>
@@ -554,13 +624,16 @@ export default function OrdersPage() {
             <CardTitle className="text-sm font-medium">Filtrar por Status</CardTitle>
           </CardHeader>
           <CardContent>
-            <select className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-              value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <select
+              className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
               <option value="">Todos</option>
               <option value="PENDENTE">Pendente</option>
               <option value="EM_ANDAMENTO">Em Andamento</option>
               <option value="COMPLETA">Completa</option>
-              <option value="CONCLUIDA">Concluída</option>
+              <option value="CONCLUIDA">Concluida</option>
               <option value="CANCELADA">Cancelada</option>
             </select>
           </CardContent>
@@ -576,16 +649,16 @@ export default function OrdersPage() {
                 <TableHead>Data</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Criador</TableHead>
-                <TableHead>Descrição</TableHead>
+                <TableHead>Descricao</TableHead>
                 <TableHead>Fotos</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Ver</TableHead>
-                {canManage && <TableHead>Ações</TableHead>}
+                {canManage && <TableHead>Acoes</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.map((order) => (
+              {orders.map((order: Order) => (
                 <TableRow key={order.id}>
                   <TableCell className="text-sm">{formatDateTime(order.createdAt)}</TableCell>
                   <TableCell>
@@ -636,8 +709,7 @@ export default function OrdersPage() {
                       onClick={() => setDetailOrder(order)}
                       className="flex items-center gap-1 rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 transition-colors"
                     >
-                      <Eye className="h-3 w-3" />
-                      Ver
+                      <Eye className="h-3 w-3" /> Ver
                     </button>
                   </TableCell>
                   {canManage && (
@@ -651,7 +723,7 @@ export default function OrdersPage() {
                           <option value="PENDENTE">Pendente</option>
                           <option value="EM_ANDAMENTO">Em Andamento</option>
                           <option value="COMPLETA">Completa</option>
-                          <option value="CONCLUIDA">Concluída</option>
+                          <option value="CONCLUIDA">Concluida</option>
                           <option value="CANCELADA">Cancelada</option>
                         </select>
                         {isAdmin && (
@@ -659,14 +731,14 @@ export default function OrdersPage() {
                             <button
                               onClick={() => openEdit(order)}
                               className="rounded-md p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-500 transition-colors"
-                              title="Editar encomenda"
+                              title="Editar"
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
                             <button
                               onClick={() => setDeleteOrderId(order.id)}
                               className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                              title="Apagar encomenda"
+                              title="Apagar"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -690,7 +762,7 @@ export default function OrdersPage() {
         </CardContent>
       </Card>
 
-      {/* Modal — Detalhes da Encomenda */}
+      {/* Modal — Detalhes */}
       {detailOrder && (
         <Dialog open={!!detailOrder} onOpenChange={() => setDetailOrder(null)}>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -701,15 +773,12 @@ export default function OrdersPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              {/* Status */}
               <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
                 <span className="text-sm text-slate-500">Status</span>
                 <Badge variant={statusVariants[detailOrder.status] || "secondary"}>
                   {statusLabels[detailOrder.status] || detailOrder.status}
                 </Badge>
               </div>
-
-              {/* Dados do cliente */}
               {(detailOrder.clientName || detailOrder.clientPhone) && (
                 <div className="rounded-lg border border-slate-200 px-4 py-3 space-y-2">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Cliente</p>
@@ -727,23 +796,19 @@ export default function OrdersPage() {
                   )}
                 </div>
               )}
-
-              {/* Descrição */}
               {detailOrder.description && (
                 <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
                   <p className="text-xs font-semibold text-blue-700 mb-1 flex items-center gap-1">
-                    <FileText className="h-3 w-3" /> Descrição da Encomenda
+                    <FileText className="h-3 w-3" /> Descricao
                   </p>
-                  <p className="text-sm text-blue-900">{detailOrder.description}</p>
+                  <p className="text-sm text-blue-900 whitespace-pre-line">{detailOrder.description}</p>
                 </div>
               )}
-
-              {/* Itens do stock */}
               {detailOrder.items.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-slate-700">Itens do Stock</p>
                   <div className="rounded-lg border border-slate-100 divide-y divide-slate-100">
-                    {detailOrder.items.map((item, i) => (
+                    {detailOrder.items.map((item: OrderItem, i: number) => (
                       <div key={i} className="flex items-center justify-between px-4 py-2.5">
                         <div>
                           <p className="text-sm font-medium">{item.product?.name}</p>
@@ -755,15 +820,11 @@ export default function OrdersPage() {
                   </div>
                 </div>
               )}
-
-              {/* Fotografias */}
               {detailOrder.images && detailOrder.images.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold text-slate-700">
-                    Fotografias ({detailOrder.images.length})
-                  </p>
+                  <p className="text-sm font-semibold text-slate-700">Fotografias ({detailOrder.images.length})</p>
                   <div className="grid grid-cols-3 gap-2">
-                    {detailOrder.images.map((img, i) => (
+                    {detailOrder.images.map((img: OrderImage, i: number) => (
                       <div
                         key={i}
                         className="relative rounded-lg overflow-hidden border border-slate-200 aspect-square cursor-pointer group"
@@ -780,16 +841,12 @@ export default function OrdersPage() {
                   </div>
                 </div>
               )}
-
-              {/* Observações */}
               {detailOrder.notes && (
                 <div className="rounded-lg bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-semibold text-slate-500 mb-1">Observações</p>
+                  <p className="text-xs font-semibold text-slate-500 mb-1">Observacoes</p>
                   <p className="text-sm text-slate-700">{detailOrder.notes}</p>
                 </div>
               )}
-
-              {/* Total */}
               <div className="flex items-center justify-between rounded-lg bg-slate-900 px-4 py-3">
                 <span className="text-sm font-medium text-slate-300">Total</span>
                 <span className="text-lg font-bold text-white">{formatCurrency(detailOrder.total)}</span>
@@ -802,19 +859,17 @@ export default function OrdersPage() {
         </Dialog>
       )}
 
-      {/* Modal — Editar Encomenda (só Admin) */}
+      {/* Modal — Editar (Admin) */}
       {editOrder && (
         <Dialog open={!!editOrder} onOpenChange={() => setEditOrder(null)}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Pencil className="h-5 w-5" />
-                Editar Encomenda
+                <Pencil className="h-5 w-5" /> Editar Encomenda
               </DialogTitle>
               <DialogDescription>Apenas administradores podem editar encomendas</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleEditSubmit} className="space-y-5">
-              {/* Dados do cliente */}
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
                 <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                   <User className="h-4 w-4" /> Dados do Cliente
@@ -825,34 +880,30 @@ export default function OrdersPage() {
                     <Input value={editClientName} onChange={(e) => setEditClientName(e.target.value)} placeholder="Nome do cliente" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs text-slate-500">Telemóvel</Label>
+                    <Label className="text-xs text-slate-500">Telemovel</Label>
                     <Input value={editClientPhone} onChange={(e) => setEditClientPhone(e.target.value)} placeholder="+258 84 000 0000" />
                   </div>
                 </div>
               </div>
-
-              {/* Descrição */}
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2">
                 <Label className="text-sm font-semibold text-blue-800 flex items-center gap-2">
-                  <FileText className="h-4 w-4" /> Descrição da Encomenda
+                  <FileText className="h-4 w-4" /> Descricao
                 </Label>
                 <Textarea
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
-                  placeholder="Descrição detalhada..."
+                  placeholder="Descricao detalhada..."
                   className="resize-none bg-white border-blue-200 min-h-[80px]"
                   rows={3}
                 />
               </div>
-
-              {/* Gerir fotografias existentes */}
               {editOrder.images && editOrder.images.length > 0 && (
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-slate-700">
                     Fotografias existentes — clica para remover
                   </Label>
                   <div className="grid grid-cols-4 gap-2">
-                    {editOrder.images.map((img) => (
+                    {editOrder.images.map((img: OrderImage) => (
                       <div
                         key={img.id}
                         onClick={() => toggleRemoveExistingImage(img.id)}
@@ -869,34 +920,58 @@ export default function OrdersPage() {
                     ))}
                   </div>
                   {editRemoveImageIds.length > 0 && (
-                    <p className="text-xs text-red-500">{editRemoveImageIds.length} foto(s) marcada(s) para remoção</p>
+                    <p className="text-xs text-red-500">{editRemoveImageIds.length} foto(s) marcada(s) para remocao</p>
                   )}
                 </div>
               )}
-
-              {/* Adicionar novas fotos */}
-              <ImageUploadArea
-                previews={editImagePreviews}
-                onChange={handleEditImageChange}
-                onRemove={removeNewEditImage}
-                label="Adicionar novas fotografias"
-              />
-
-              {/* Observações */}
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4 text-slate-500" />
+                  Adicionar fotografias ({editImagePreviews.length})
+                </Label>
+                {editImagePreviews.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {editImagePreviews.map((src: string, i: number) => (
+                      <div key={i} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-square">
+                        <img src={src} alt={`foto ${i + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeNewEditImage(i)}
+                          className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-red-600 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-6 cursor-pointer hover:bg-slate-100 transition-all">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleEditImageChange}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div className="flex flex-col items-center gap-2 pointer-events-none">
+                    <Upload className="h-5 w-5 text-slate-400" />
+                    <p className="text-sm text-slate-500">Clicar para adicionar fotos</p>
+                  </div>
+                </div>
+              </div>
               <div className="space-y-2">
-                <Label className="text-sm font-semibold text-slate-700">Observações</Label>
+                <Label className="text-sm font-semibold text-slate-700">Observacoes</Label>
                 <Textarea
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
-                  placeholder="Observações adicionais..."
+                  placeholder="Observacoes adicionais..."
                   className="resize-none"
                   rows={2}
                 />
               </div>
-
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
                 <Button type="button" variant="outline" onClick={() => setEditOrder(null)}>Cancelar</Button>
-                <Button type="submit">Guardar Alterações</Button>
+                <Button type="submit">Guardar Alteracoes</Button>
               </div>
             </form>
           </DialogContent>
@@ -915,8 +990,12 @@ export default function OrdersPage() {
               <img src={imageViewUrl} alt="Item" className="max-h-[65vh] w-auto object-contain" />
             </div>
             <div className="flex justify-end gap-2">
-              <a href={imageViewUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
+              <a
+                href={imageViewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+              >
                 <Eye className="h-3 w-3" /> Abrir em nova aba
               </a>
               <Button variant="outline" onClick={() => setImageViewUrl(null)}>Fechar</Button>
@@ -931,11 +1010,10 @@ export default function OrdersPage() {
           <DialogContent className="max-w-sm">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-red-600">
-                <AlertTriangle className="h-5 w-5" />
-                Apagar Encomenda
+                <AlertTriangle className="h-5 w-5" /> Apagar Encomenda
               </DialogTitle>
               <DialogDescription>
-                Esta ação é irreversível. Tens a certeza que queres apagar esta encomenda?
+                Esta acao e irreversivel. Tens a certeza que queres apagar esta encomenda?
               </DialogDescription>
             </DialogHeader>
             <div className="flex justify-end gap-2 pt-2">
