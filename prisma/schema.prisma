@@ -73,15 +73,17 @@ model Purchase {
 }
 
 model PurchaseItem {
-  id         String @id @default(cuid())
-  purchaseId String @map("purchase_id")
-  productId  String @map("product_id")
-  quantity   Int
-  unitPrice  Float  @map("unit_price")
-  total      Float
+  id          String  @id @default(cuid())
+  purchaseId  String  @map("purchase_id")
+  productId   String? @map("product_id")
+  description String?
+  itemType    String  @default("STOCK") @map("item_type")
+  quantity    Int
+  unitPrice   Float   @map("unit_price")
+  total       Float
 
-  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  product  Product  @relation(fields: [productId], references: [id])
+  purchase Purchase  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@map("purchase_items")
 }
