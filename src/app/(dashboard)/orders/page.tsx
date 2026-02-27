@@ -260,13 +260,9 @@ export default function OrdersPage() {
       if (notes) formData.append("notes", notes);
       if (clientName) formData.append("clientName", clientName);
       if (clientPhone) formData.append("clientPhone", clientPhone);
-
-      // Guardar descricao + quantidade/preco custom nas notas se nao tiver produto stock
-      let finalDescription = description;
-      if (customUnitPrice && parseFloat(customUnitPrice) > 0) {
-        finalDescription += `\n[Qtd: ${customQuantity} | Preco unit.: ${customUnitPrice}]`;
-      }
-      if (finalDescription) formData.append("description", finalDescription.trim());
+      if (description) formData.append("description", description);
+      if (customQuantity) formData.append("customQuantity", customQuantity);
+      if (customUnitPrice) formData.append("customUnitPrice", customUnitPrice);
 
       imageFiles.forEach((file: File) => formData.append("images", file));
 
