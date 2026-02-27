@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkAuth } from "@/lib/rbac";
-import { saleSchema } from "@/lib/validations";
 
 export async function GET(req: NextRequest) {
   const { authorized, response, session } = await checkAuth();
@@ -11,11 +10,6 @@ export async function GET(req: NextRequest) {
   const date = searchParams.get("date");
 
   const where: Record<string, unknown> = {};
-
-  if (session.user.role === "FUNCIONARIO") {
-    where.userId = session.user.id;
-  }
-
   if (date) {
     const start = new Date(date);
     start.setHours(0, 0, 0, 0);
@@ -24,7 +18,7 @@ export async function GET(req: NextRequest) {
     where.createdAt = { gte: start, lte: end };
   }
 
-  const sales = await prisma.sale.findMany({
+  const purchases = await prisma.purchase.findMany({
     where,
     include: {
       user: { select: { name: true } },
@@ -35,7 +29,7 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json(sales);
+  return NextResponse.json(purchases);
 }
 
 export async function POST(req: NextRequest) {
@@ -44,73 +38,68 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const parsed = saleSchema.safeParse(body);
+    const { items = [], freeItemsTotal = 0, notes } = body;
 
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.message },
-        { status: 400 }
-      );
-    }
+    // Calcular total dos itens do stock + itens livres
+    const stockTotal = items.reduce(
+      (sum: number, i: { quantity: number; unitPrice: number }) =>
+        sum + i.quantity * i.unitPrice,
+      0
+    );
+    const total = stockTotal + (parseFloat(freeItemsTotal) || 0);
 
-    const { items, notes } = parsed.data;
-
-    const sale = await prisma.$transaction(async (tx) => {
-      let totalAmount = 0;
-      let totalProfit = 0;
-      const saleItems = [];
-
+    const purchase = await prisma.$transaction(async (tx) => {
+      // Atualizar quantidade dos produtos do stock
       for (const item of items) {
         const product = await tx.product.findUnique({
           where: { id: item.productId },
         });
-
         if (!product) {
-          throw new Error(`Produto não encontrado: ${item.productId}`);
+          throw new Error(`Produto nao encontrado: ${item.productId}`);
         }
-
-        if (product.quantity < item.quantity) {
-          throw new Error(`Stock insuficiente para: ${product.name}`);
-        }
-
-        const itemTotal = item.quantity * item.unitPrice;
-        const itemProfit = (item.unitPrice - product.buyPrice) * item.quantity;
-        totalAmount += itemTotal;
-        totalProfit += itemProfit;
-
-        saleItems.push({
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          buyPrice: product.buyPrice,
-          total: itemTotal,
-          profit: itemProfit,
-        });
-
         await tx.product.update({
           where: { id: item.productId },
-          data: { quantity: { decrement: item.quantity } },
+          data: { quantity: { increment: item.quantity } },
         });
       }
 
-      return tx.sale.create({
+      return tx.purchase.create({
         data: {
           userId: session.user.id,
-          total: totalAmount,
-          profit: totalProfit,
-          notes,
-          items: { create: saleItems },
+          total,
+          notes: notes || null,
+          items:
+            items.length > 0
+              ? {
+                  create: items.map(
+                    (i: {
+                      productId: string;
+                      quantity: number;
+                      unitPrice: number;
+                    }) => ({
+                      productId: i.productId,
+                      quantity: i.quantity,
+                      unitPrice: i.unitPrice,
+                      total: i.quantity * i.unitPrice,
+                    })
+                  ),
+                }
+              : undefined,
         },
         include: {
-          items: { include: { product: { select: { name: true } } } },
+          user: { select: { name: true } },
+          items: {
+            include: { product: { select: { name: true } } },
+          },
         },
       });
     });
 
-    return NextResponse.json(sale, { status: 201 });
+    return NextResponse.json(purchase, { status: 201 });
   } catch (error) {
-    console.error("Sale error:", error);
-    const message = error instanceof Error ? error.message : "Erro ao registrar venda";
+    console.error("Purchase error:", error);
+    const message =
+      error instanceof Error ? error.message : "Erro ao registar compra";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
