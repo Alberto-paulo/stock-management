@@ -19,25 +19,48 @@ export async function GET() {
     orders,
     debts,
   ] = await Promise.all([
-    prisma.product.findMany({ where: { active: true } }),
+    prisma.product.findMany({
+      where: { active: true },
+      select: {
+        name: true,
+        buyPrice: true,
+        sellPrice: true,
+        quantity: true,
+        minQuantity: true,
+      },
+    }),
+
     prisma.sale.findMany({
       where: { createdAt: { gte: startOfDay, lte: endOfDay } },
+      select: { total: true, profit: true },
     }),
+
     prisma.sale.findMany({
       where: { createdAt: { gte: startOfMonth } },
+      select: { total: true, profit: true },
     }),
+
     prisma.purchase.findMany({
       where: { createdAt: { gte: startOfDay, lte: endOfDay } },
+      select: { total: true },
     }),
-    prisma.order.findMany(),
-    prisma.debt.findMany(),
+
+    prisma.order.findMany({
+      select: { status: true, total: true },
+    }),
+
+    prisma.debt.findMany({
+      select: { totalAmount: true, paidAmount: true, remaining: true },
+    }),
   ]);
 
   const stockReport = {
     totalProducts: products.length,
     totalInvested: products.reduce((sum, p) => sum + p.buyPrice * p.quantity, 0),
     totalPotentialSale: products.reduce((sum, p) => sum + p.sellPrice * p.quantity, 0),
-    lowStockProducts: products.filter((p) => p.quantity <= p.minQuantity),
+    lowStockProducts: products
+      .filter((p) => p.quantity <= p.minQuantity)
+      .map((p) => ({ name: p.name, quantity: p.quantity, minQuantity: p.minQuantity })),
     lowStockCount: products.filter((p) => p.quantity <= p.minQuantity).length,
   };
 
