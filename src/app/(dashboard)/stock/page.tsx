@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Toast } from "@/components/ui/toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, AlertTriangle, Edit2 } from "lucide-react";
+import { Plus, AlertTriangle, Edit2, Trash2 } from "lucide-react";
 
 interface Product {
   id: string;
@@ -29,6 +29,8 @@ export default function StockPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const [deleteProductId, setDeleteProductId] = useState<string | null>(null);
+  const [deleteProductName, setDeleteProductName] = useState<string>("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({
@@ -42,6 +44,7 @@ export default function StockPage() {
 
   const role = session?.user?.role;
   const canEdit = role === "ADMIN" || role === "GERENTE";
+  const isAdmin = role === "ADMIN";
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -72,11 +75,10 @@ export default function StockPage() {
     };
 
     try {
-      const url = "/api/products";
       const method = editProduct ? "PUT" : "POST";
       const body = editProduct ? { id: editProduct.id, ...data } : data;
 
-      const res = await fetch(url, {
+      const res = await fetch("/api/products", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -97,6 +99,26 @@ export default function StockPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleteProductId) return;
+    try {
+      const res = await fetch(`/api/products?id=${deleteProductId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setToast({ message: "Produto apagado com sucesso!", type: "success" });
+        setDeleteProductId(null);
+        setDeleteProductName("");
+        fetchProducts();
+      } else {
+        const err = await res.json();
+        setToast({ message: err.error || "Erro ao apagar", type: "error" });
+      }
+    } catch {
+      setToast({ message: "Erro ao apagar produto", type: "error" });
+    }
+  };
+
   const openEdit = (product: Product) => {
     setEditProduct(product);
     setForm({
@@ -114,6 +136,11 @@ export default function StockPage() {
     setEditProduct(null);
     setForm({ name: "", category: "", buyPrice: "", sellPrice: "", quantity: "", minQuantity: "5" });
     setDialogOpen(true);
+  };
+
+  const openDelete = (product: Product) => {
+    setDeleteProductId(product.id);
+    setDeleteProductName(product.name);
   };
 
   const filtered = products.filter(
@@ -165,11 +192,11 @@ export default function StockPage() {
                     <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required />
                   </div>
                   <div className="space-y-2">
-                    <Label>Preço de Compra</Label>
+                    <Label>Preco de Compra</Label>
                     <Input type="number" step="0.01" value={form.buyPrice} onChange={(e) => setForm({ ...form, buyPrice: e.target.value })} required />
                   </div>
                   <div className="space-y-2">
-                    <Label>Preço de Venda</Label>
+                    <Label>Preco de Venda</Label>
                     <Input type="number" step="0.01" value={form.sellPrice} onChange={(e) => setForm({ ...form, sellPrice: e.target.value })} required />
                   </div>
                   <div className="space-y-2">
@@ -177,7 +204,7 @@ export default function StockPage() {
                     <Input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} required />
                   </div>
                   <div className="space-y-2">
-                    <Label>Qtd. Mínima (Alerta)</Label>
+                    <Label>Qtd. Minima (Alerta)</Label>
                     <Input type="number" value={form.minQuantity} onChange={(e) => setForm({ ...form, minQuantity: e.target.value })} required />
                   </div>
                 </div>
@@ -226,15 +253,15 @@ export default function StockPage() {
               <TableRow>
                 <TableHead>Produto</TableHead>
                 <TableHead>Categoria</TableHead>
-                <TableHead>Preço Compra</TableHead>
-                <TableHead>Preço Venda</TableHead>
+                <TableHead>Preco Compra</TableHead>
+                <TableHead>Preco Venda</TableHead>
                 <TableHead>Quantidade</TableHead>
                 <TableHead>Status</TableHead>
-                {canEdit && <TableHead>Ações</TableHead>}
+                {canEdit && <TableHead>Acoes</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((product) => (
+              {filtered.map((product: Product) => (
                 <TableRow key={product.id}>
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell>{product.category}</TableCell>
@@ -253,9 +280,20 @@ export default function StockPage() {
                   </TableCell>
                   {canEdit && (
                     <TableCell>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(product)}>
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(product)}>
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => openDelete(product)}
+                            className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                            title="Apagar produto"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </TableCell>
                   )}
                 </TableRow>
@@ -271,6 +309,31 @@ export default function StockPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Modal — Confirmar apagar produto */}
+      {deleteProductId && (
+        <Dialog open={!!deleteProductId} onOpenChange={() => setDeleteProductId(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <AlertTriangle className="h-5 w-5" />
+                Apagar Produto
+              </DialogTitle>
+              <DialogDescription>
+                Tens a certeza que queres apagar <strong>{deleteProductName}</strong>? Esta acao e irreversivel e pode afetar historico de vendas e encomendas.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setDeleteProductId(null)}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={handleDelete}>
+                Sim, apagar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
