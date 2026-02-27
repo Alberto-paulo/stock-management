@@ -140,24 +140,33 @@ export default function OrdersPage() {
     setItems(newItems);
   };
 
-  const processFiles = (files: File[], existingFiles: File[], existingPreviews: string[], setFiles: (f: File[]) => void, setPreviews: (p: string[]) => void, limit = 10) => {
-    const validFiles = files.filter(f => f.type.startsWith("image/") && f.size <= 10 * 1024 * 1024);
-    const combined = [...existingFiles, ...validFiles].slice(0, limit);
-    setFiles(combined);
-    combined.forEach((file, i) => {
-      if (i >= existingFiles.length) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setPreviews(prev => {
-            const updated = [...prev];
-            updated[i] = reader.result as string;
-            return updated;
-          });
-        };
-        reader.readAsDataURL(file);
-      }
-    });
-  };
+  const processFiles = (
+  files: File[],
+  existingFiles: File[],
+  existingPreviews: string[],
+  setFiles: (f: File[]) => void,
+  setPreviews: (p: string[]) => void,
+  limit = 10
+) => {
+  const validFiles = files.filter(
+    (f) => f.type.startsWith("image/") && f.size <= 10 * 1024 * 1024
+  );
+  const combined = [...existingFiles, ...validFiles].slice(0, limit);
+  setFiles(combined);
+
+  const newPreviews = [...existingPreviews];
+  const newFiles = combined.slice(existingFiles.length);
+
+  newFiles.forEach((file, idx) => {
+    const i = existingFiles.length + idx;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      newPreviews[i] = reader.result as string;
+      setPreviews([...newPreviews]);
+    };
+    reader.readAsDataURL(file);
+  });
+};
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
