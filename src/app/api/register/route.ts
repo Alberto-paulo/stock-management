@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { checkAuth } from "@/lib/rbac";
 import { registerSchema } from "@/lib/validations";
 
+// Só administradores autenticados podem criar contas.
 export async function POST(req: NextRequest) {
+  const { authorized, response } = await checkAuth(["ADMIN"]);
+  if (!authorized) return response;
+
   try {
     const body = await req.json();
     const parsed = registerSchema.safeParse(body);
