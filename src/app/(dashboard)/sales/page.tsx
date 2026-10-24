@@ -38,6 +38,14 @@ interface Sale {
   items: SaleItem[];
 }
 
+type Period = "daily" | "weekly" | "monthly";
+
+const PERIODS: { value: Period; label: string }[] = [
+  { value: "daily", label: "Diário" },
+  { value: "weekly", label: "Semanal" },
+  { value: "monthly", label: "Mensal" },
+];
+
 export default function SalesPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -47,12 +55,14 @@ export default function SalesPage() {
   const [items, setItems] = useState<{ productId: string; quantity: string; unitPrice: string }[]>([]);
   const [notes, setNotes] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  const [period, setPeriod] = useState<Period>("daily");
 
   const fetchData = useCallback(async () => {
     try {
-      const query = dateFilter ? `?date=${dateFilter}` : "";
+      const params = new URLSearchParams({ period });
+      if (dateFilter) params.set("date", dateFilter);
       const [salesRes, productsRes] = await Promise.all([
-        fetch(`/api/sales${query}`),
+        fetch(`/api/sales?${params.toString()}`),
         fetch("/api/products"),
       ]);
       if (salesRes.ok) setSales(await salesRes.json());
@@ -62,7 +72,7 @@ export default function SalesPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFilter]);
+  }, [dateFilter, period]);
 
   useEffect(() => {
     fetchData();
@@ -122,6 +132,13 @@ export default function SalesPage() {
   const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
   const totalProfit = sales.reduce((sum, s) => sum + s.profit, 0);
 
+  const dateLabel =
+    period === "daily"
+      ? "Dia"
+      : period === "weekly"
+      ? "Semana que contém o dia"
+      : "Mês que contém o dia";
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -134,7 +151,7 @@ export default function SalesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Vendas Diárias</h1>
+          <h1 className="text-3xl font-bold">Vendas</h1>
           <p className="text-slate-500">Registre e acompanhe as vendas</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -200,6 +217,20 @@ export default function SalesPage() {
         </Dialog>
       </div>
 
+      <div className="flex gap-2">
+        {PERIODS.map((p) => (
+          <Button
+            key={p.value}
+            type="button"
+            size="sm"
+            variant={period === p.value ? "default" : "outline"}
+            onClick={() => setPeriod(p.value)}
+          >
+            {p.label}
+          </Button>
+        ))}
+      </div>
+
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -222,10 +253,11 @@ export default function SalesPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Filtrar por Data</CardTitle>
+            <CardTitle className="text-sm font-medium">{dateLabel}</CardTitle>
           </CardHeader>
           <CardContent>
             <Input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} />
+            <p className="mt-1 text-xs text-slate-500">Vazio = período actual</p>
           </CardContent>
         </Card>
       </div>
