@@ -2,22 +2,64 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkAuth } from "@/lib/rbac";
 
+type Period = "daily" | "weekly" | "monthly";
+
+// Maputo = UTC+2, sem horário de verão
+const TZ_OFFSET_MS = 2 * 60 * 60 * 1000;
+
+function getRange(period: Period, dateParam: string | null) {
+  let y: number, m: number, d: number;
+
+  if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+    const [yy, mm, dd] = dateParam.split("-").map(Number);
+    y = yy;
+    m = mm - 1;
+    d = dd;
+  } else {
+    // "hoje" no fuso de Maputo, independentemente do fuso do servidor
+    const now = new Date(Date.now() + TZ_OFFSET_MS);
+    y = now.getUTCFullYear();
+    m = now.getUTCMonth();
+    d = now.getUTCDate();
+  }
+
+  let startLocal: number;
+  let endLocal: number;
+
+  if (period === "weekly") {
+    const dow = new Date(Date.UTC(y, m, d)).getUTCDay(); // 0 = domingo
+    const diff = (dow + 6) % 7; // semana começa na segunda-feira
+    startLocal = Date.UTC(y, m, d - diff);
+    endLocal = Date.UTC(y, m, d - diff + 7);
+  } else if (period === "monthly") {
+    startLocal = Date.UTC(y, m, 1);
+    endLocal = Date.UTC(y, m + 1, 1);
+  } else {
+    startLocal = Date.UTC(y, m, d);
+    endLocal = Date.UTC(y, m, d + 1);
+  }
+
+  return {
+    start: new Date(startLocal - TZ_OFFSET_MS),
+    end: new Date(endLocal - TZ_OFFSET_MS),
+  };
+}
+
 export async function GET(req: NextRequest) {
   const { authorized, response, session } = await checkAuth();
   if (!authorized || !session) return response;
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
+  const rawPeriod = searchParams.get("period");
+  const period: Period =
+    rawPeriod === "weekly" || rawPeriod === "monthly" ? rawPeriod : "daily";
 
-  const where: Record<string, unknown> = {};
+  const { start, end } = getRange(period, date);
 
-  if (date) {
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(date);
-    end.setHours(23, 59, 59, 999);
-    where.createdAt = { gte: start, lte: end };
-  }
+  const where: Record<string, unknown> = {
+    createdAt: { gte: start, lt: end },
+  };
 
   const sales = await prisma.sale.findMany({
     where,
