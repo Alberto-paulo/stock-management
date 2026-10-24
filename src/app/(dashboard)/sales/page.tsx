@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Textarea } from "@/components/ui/textarea";
 import { Toast } from "@/components/ui/toast";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
-import { Plus, Trash2, TrendingUp, DollarSign } from "lucide-react";
+import { Plus, Trash2, TrendingUp, DollarSign, Search } from "lucide-react";
 
 interface Product {
   id: string;
@@ -41,10 +41,17 @@ interface Sale {
 type Period = "daily" | "weekly" | "monthly";
 
 const PERIODS: { value: Period; label: string }[] = [
-  { value: "daily", label: "Diário" },
-  { value: "weekly", label: "Semanal" },
-  { value: "monthly", label: "Mensal" },
+  { value: "daily", label: "Vendas Diárias" },
+  { value: "weekly", label: "Vendas Semanais" },
+  { value: "monthly", label: "Vendas Mensais" },
 ];
+
+const normalize = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 
 export default function SalesPage() {
   const [sales, setSales] = useState<Sale[]>([]);
@@ -55,7 +62,8 @@ export default function SalesPage() {
   const [items, setItems] = useState<{ productId: string; quantity: string; unitPrice: string }[]>([]);
   const [notes, setNotes] = useState("");
   const [dateFilter, setDateFilter] = useState("");
-  const [period, setPeriod] = useState<Period>("daily");
+  const [period, setPeriod] = useState<Period>("monthly");
+  const [search, setSearch] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -129,15 +137,16 @@ export default function SalesPage() {
     }
   };
 
-  const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
-  const totalProfit = sales.reduce((sum, s) => sum + s.profit, 0);
+  // Pesquisa apenas pelo nome dos produtos vendidos
+  const filteredSales = sales.filter((sale) => {
+    if (search.trim() === "") return true;
+    return sale.items.some((item) =>
+      normalize(item.product?.name || "").includes(normalize(search))
+    );
+  });
 
-  const dateLabel =
-    period === "daily"
-      ? "Dia"
-      : period === "weekly"
-      ? "Semana que contém o dia"
-      : "Mês que contém o dia";
+  const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0);
+  const totalProfit = filteredSales.reduce((sum, s) => sum + s.profit, 0);
 
   const totalLabel =
     period === "daily"
@@ -224,21 +233,7 @@ export default function SalesPage() {
         </Dialog>
       </div>
 
-      <div className="flex gap-2">
-        {PERIODS.map((p) => (
-          <Button
-            key={p.value}
-            type="button"
-            size="sm"
-            variant={period === p.value ? "default" : "outline"}
-            onClick={() => setPeriod(p.value)}
-          >
-            {p.label}
-          </Button>
-        ))}
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total Vendido</CardTitle>
@@ -246,7 +241,7 @@ export default function SalesPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(totalSales)}</div>
-            <p className="text-xs text-slate-500">{sales.length} vendas</p>
+            <p className="text-xs text-slate-500">{filteredSales.length} vendas</p>
           </CardContent>
         </Card>
         <Card>
@@ -258,15 +253,38 @@ export default function SalesPage() {
             <div className="text-2xl font-bold text-green-600">{formatCurrency(totalProfit)}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{dateLabel}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} />
-            <p className="mt-1 text-xs text-slate-500">Vazio = período actual</p>
-          </CardContent>
-        </Card>
+      </div>
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="relative w-full lg:max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            className="pl-9"
+            placeholder="Pesquisar produto vendido..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {PERIODS.map((p) => (
+            <Button
+              key={p.value}
+              type="button"
+              size="sm"
+              variant={period === p.value ? "default" : "outline"}
+              onClick={() => setPeriod(p.value)}
+            >
+              {p.label}
+            </Button>
+          ))}
+        </div>
+        <Input
+          type="date"
+          className="w-full lg:w-44"
+          title="Escolher um dia (vazio = período actual)"
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value)}
+        />
       </div>
 
       <Card>
@@ -282,7 +300,7 @@ export default function SalesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sales.map((sale) => (
+              {filteredSales.map((sale) => (
                 <TableRow key={sale.id}>
                   <TableCell>{formatDateTime(sale.createdAt)}</TableCell>
                   <TableCell>{sale.user.name}</TableCell>
@@ -297,17 +315,17 @@ export default function SalesPage() {
                   <TableCell className="font-medium text-green-600">{formatCurrency(sale.profit)}</TableCell>
                 </TableRow>
               ))}
-              {sales.length === 0 && (
+              {filteredSales.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-slate-500">
                     Nenhuma venda encontrada
                   </TableCell>
                 </TableRow>
               )}
-              {sales.length > 0 && (
+              {filteredSales.length > 0 && (
                 <TableRow className="bg-slate-50 font-bold">
                   <TableCell colSpan={3} className="text-right">
-                    {totalLabel} ({sales.length} {sales.length === 1 ? "venda" : "vendas"})
+                    {totalLabel} ({filteredSales.length} {filteredSales.length === 1 ? "venda" : "vendas"})
                   </TableCell>
                   <TableCell className="font-bold">{formatCurrency(totalSales)}</TableCell>
                   <TableCell className="font-bold text-green-600">{formatCurrency(totalProfit)}</TableCell>
