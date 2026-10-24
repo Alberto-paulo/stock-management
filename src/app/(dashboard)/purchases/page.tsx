@@ -24,7 +24,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Toast } from "@/components/ui/toast";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
-import { Plus, Trash2, ShoppingCart, Package, FileText } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ShoppingCart,
+  Package,
+  FileText,
+  Search,
+  Calculator,
+} from "lucide-react";
 
 interface Product {
   id: string;
@@ -72,6 +80,13 @@ const PERIODS: { value: Period; label: string }[] = [
   { value: "monthly", label: "Mensal" },
 ];
 
+const normalize = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
 export default function PurchasesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -88,7 +103,8 @@ export default function PurchasesPage() {
   ]);
   const [notes, setNotes] = useState<string>("");
   const [dateFilter, setDateFilter] = useState<string>("");
-  const [period, setPeriod] = useState<Period>("daily");
+  const [period, setPeriod] = useState<Period>("monthly");
+  const [search, setSearch] = useState<string>("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -119,7 +135,10 @@ export default function PurchasesPage() {
 
   // Stock items
   const addStockItem = () =>
-    setStockItems([...stockItems, { productId: "", quantity: "1", unitPrice: "" }]);
+    setStockItems([
+      ...stockItems,
+      { productId: "", quantity: "1", unitPrice: "" },
+    ]);
 
   const removeStockItem = (index: number) =>
     setStockItems(stockItems.filter((_: StockItem, i: number) => i !== index));
@@ -136,7 +155,10 @@ export default function PurchasesPage() {
 
   // Free items
   const addFreeItem = () =>
-    setFreeItems([...freeItems, { description: "", quantity: "1", unitPrice: "" }]);
+    setFreeItems([
+      ...freeItems,
+      { description: "", quantity: "1", unitPrice: "" },
+    ]);
 
   const removeFreeItem = (index: number) =>
     setFreeItems(freeItems.filter((_: FreeItem, i: number) => i !== index));
@@ -147,7 +169,7 @@ export default function PurchasesPage() {
     setFreeItems(updated);
   };
 
-  // Totais
+  // Totais do formulario
   const stockTotal = stockItems.reduce(
     (sum: number, i: StockItem) =>
       sum + (parseFloat(i.quantity) || 0) * (parseFloat(i.unitPrice) || 0),
@@ -166,8 +188,8 @@ export default function PurchasesPage() {
     e.preventDefault();
 
     const validStockItems = stockItems.filter((i: StockItem) => i.productId);
-    const validFreeItems = freeItems.filter((i: FreeItem) =>
-      i.description.trim() && parseFloat(i.unitPrice) > 0
+    const validFreeItems = freeItems.filter(
+      (i: FreeItem) => i.description.trim() && parseFloat(i.unitPrice) > 0
     );
 
     if (validStockItems.length === 0 && validFreeItems.length === 0) {
@@ -208,17 +230,35 @@ export default function PurchasesPage() {
     }
   };
 
-  const totalPeriod = purchases.reduce(
+  // Pesquisa por itens livres, produtos do stock, notas e responsavel
+  const filteredPurchases = purchases.filter((purchase: Purchase) => {
+    if (search.trim() === "") return true;
+    const term = normalize(search);
+    return (
+      purchase.items.some(
+        (item: PurchaseItem) =>
+          normalize(item.description || "").includes(term) ||
+          normalize(item.product?.name || "").includes(term)
+      ) ||
+      normalize(purchase.notes || "").includes(term) ||
+      normalize(purchase.user.name).includes(term)
+    );
+  });
+
+  const totalPeriod = filteredPurchases.reduce(
     (sum: number, p: Purchase) => sum + p.total,
     0
   );
 
+  const averagePurchase =
+    filteredPurchases.length > 0 ? totalPeriod / filteredPurchases.length : 0;
+
   const dateLabel =
     period === "daily"
-      ? "Dia"
+      ? "Escolher o dia"
       : period === "weekly"
-      ? "Semana que contem o dia"
-      : "Mes que contem o dia";
+      ? "Escolher um dia (mostra a semana que o contem)"
+      : "Escolher um dia (mostra o mes que o contem)";
 
   if (loading) {
     return (
@@ -254,8 +294,7 @@ export default function PurchasesPage() {
               <DialogDescription>Adicione os itens comprados</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-5">
-
-              {/* Itens livres — o que foi comprado */}
+              {/* Itens livres - o que foi comprado */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-blue-500" />
@@ -502,21 +541,6 @@ export default function PurchasesPage() {
         </Dialog>
       </div>
 
-      {/* Filtro de periodo */}
-      <div className="flex gap-2">
-        {PERIODS.map((p) => (
-          <Button
-            key={p.value}
-            type="button"
-            size="sm"
-            variant={period === p.value ? "default" : "outline"}
-            onClick={() => setPeriod(p.value)}
-          >
-            {p.label}
-          </Button>
-        ))}
-      </div>
-
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
@@ -530,22 +554,58 @@ export default function PurchasesPage() {
             <div className="text-2xl font-bold">
               {formatCurrency(totalPeriod)}
             </div>
-            <p className="text-xs text-slate-500">{purchases.length} compras</p>
+            <p className="text-xs text-slate-500">
+              {filteredPurchases.length}{" "}
+              {filteredPurchases.length === 1 ? "compra" : "compras"}
+            </p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{dateLabel}</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">
+              Media por Compra
+            </CardTitle>
+            <Calculator className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <Input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-            />
-            <p className="mt-1 text-xs text-slate-500">Vazio = periodo actual</p>
+            <div className="text-2xl font-bold">
+              {formatCurrency(averagePurchase)}
+            </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Filtros (por baixo dos cards) */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="relative w-full lg:max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            className="pl-9"
+            placeholder="Pesquisar item, produto, nota ou responsavel..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {PERIODS.map((p) => (
+            <Button
+              key={p.value}
+              type="button"
+              size="sm"
+              variant={period === p.value ? "default" : "outline"}
+              onClick={() => setPeriod(p.value)}
+            >
+              {p.label}
+            </Button>
+          ))}
+        </div>
+        <Input
+          type="date"
+          className="w-full lg:w-44"
+          title={`${dateLabel} (vazio = periodo actual)`}
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value)}
+        />
       </div>
 
       {/* Tabela */}
@@ -563,7 +623,7 @@ export default function PurchasesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {purchases.map((purchase: Purchase) => {
+              {filteredPurchases.map((purchase: Purchase) => {
                 const stockPurchaseItems = purchase.items.filter(
                   (i: PurchaseItem) => i.itemType === "STOCK"
                 );
@@ -624,7 +684,7 @@ export default function PurchasesPage() {
                   </TableRow>
                 );
               })}
-              {purchases.length === 0 && (
+              {filteredPurchases.length === 0 && (
                 <TableRow>
                   <TableCell
                     colSpan={6}
