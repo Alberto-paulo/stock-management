@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Textarea } from "@/components/ui/textarea";
 import { Toast } from "@/components/ui/toast";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
-import { Plus, CreditCard, DollarSign, AlertTriangle } from "lucide-react";
+import { Plus, CreditCard, DollarSign, AlertTriangle, Search } from "lucide-react";
 
 interface Payment {
   id: string;
@@ -31,6 +31,14 @@ interface Debt {
   payments: Payment[];
 }
 
+type StatusFilter = "all" | "pending" | "paid";
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "Todos" },
+  { value: "pending", label: "Pendentes" },
+  { value: "paid", label: "Pagos" },
+];
+
 export default function DebtsPage() {
   const [debts, setDebts] = useState<Debt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +48,8 @@ export default function DebtsPage() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [debtForm, setDebtForm] = useState({ clientName: "", totalAmount: "", description: "" });
   const [payForm, setPayForm] = useState({ amount: "", notes: "" });
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [search, setSearch] = useState("");
 
   const fetchDebts = useCallback(async () => {
     try {
@@ -117,6 +127,25 @@ export default function DebtsPage() {
   const totalPaid = debts.reduce((sum, d) => sum + d.paidAmount, 0);
   const totalRemaining = debts.reduce((sum, d) => sum + d.remaining, 0);
 
+  const normalize = (text: string) =>
+    text
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+
+  const filteredDebts = debts.filter((debt) => {
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "paid" && debt.remaining === 0) ||
+      (statusFilter === "pending" && debt.remaining > 0);
+
+    const matchesSearch =
+      search.trim() === "" || normalize(debt.clientName).includes(normalize(search));
+
+    return matchesStatus && matchesSearch;
+  });
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -193,6 +222,31 @@ export default function DebtsPage() {
         </Card>
       </div>
 
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="relative w-full md:max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            className="pl-9"
+            placeholder="Procurar pelo nome do cliente..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-2">
+          {STATUS_FILTERS.map((f) => (
+            <Button
+              key={f.value}
+              type="button"
+              size="sm"
+              variant={statusFilter === f.value ? "default" : "outline"}
+              onClick={() => setStatusFilter(f.value)}
+            >
+              {f.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -208,7 +262,7 @@ export default function DebtsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {debts.map((debt) => (
+              {filteredDebts.map((debt) => (
                 <TableRow key={debt.id}>
                   <TableCell className="font-medium">{debt.clientName}</TableCell>
                   <TableCell>{formatCurrency(debt.totalAmount)}</TableCell>
@@ -240,10 +294,12 @@ export default function DebtsPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {debts.length === 0 && (
+              {filteredDebts.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-slate-500">
-                    Nenhuma dívida registrada
+                    {debts.length === 0
+                      ? "Nenhuma dívida registrada"
+                      : "Nenhuma dívida encontrada com esses filtros"}
                   </TableCell>
                 </TableRow>
               )}
