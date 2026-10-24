@@ -81,13 +81,16 @@ npm run dev
 
 Acesse: http://localhost:3000
 
-## Credenciais de Teste (apos seed)
+## Contas iniciais (apos seed)
 
-| Perfil | Email | Senha |
-|---|---|---|
-| Admin | admin@stockpro.com | admin123 |
-| Gerente | gerente@stockpro.com | gerente123 |
-| Funcionario | funcionario@stockpro.com | func123 |
+O seed cria tres contas de teste (`admin@stockpro.com`, `gerente@stockpro.com` e
+`funcionario@stockpro.com`). As senhas **nao sao fixas**: defina-as no `.env` com
+`SEED_ADMIN_PASSWORD`, `SEED_GERENTE_PASSWORD` e `SEED_FUNCIONARIO_PASSWORD`
+(minimo de 10 caracteres). Se nao definir, o seed gera senhas aleatorias e mostra-as
+uma unica vez no terminal.
+
+**Nunca execute o seed numa base de producao.** Em producao, crie o primeiro
+administrador manualmente e use um email e uma senha fortes.
 
 ## Deploy na Vercel
 
