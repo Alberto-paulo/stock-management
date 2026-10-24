@@ -139,6 +139,13 @@ export default function SalesPage() {
       ? "Semana que contém o dia"
       : "Mês que contém o dia";
 
+  const totalLabel =
+    period === "daily"
+      ? "Total do dia"
+      : period === "weekly"
+      ? "Total da semana"
+      : "Total do mês";
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -295,6 +302,15 @@ export default function SalesPage() {
                   <TableCell colSpan={5} className="text-center text-slate-500">
                     Nenhuma venda encontrada
                   </TableCell>
+                </TableRow>
+              )}
+              {sales.length > 0 && (
+                <TableRow className="bg-slate-50 font-bold">
+                  <TableCell colSpan={3} className="text-right">
+                    {totalLabel} ({sales.length} {sales.length === 1 ? "venda" : "vendas"})
+                  </TableCell>
+                  <TableCell className="font-bold">{formatCurrency(totalSales)}</TableCell>
+                  <TableCell className="font-bold text-green-600">{formatCurrency(totalProfit)}</TableCell>
                 </TableRow>
               )}
             </TableBody>
