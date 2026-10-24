@@ -1,15 +1,43 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 
 const prisma = new PrismaClient();
 
+// Senhas vêm do .env; se faltarem, geram-se senhas aleatórias (mostradas uma só vez).
+function resolvePassword(envName: string): { value: string; generated: boolean } {
+  const fromEnv = process.env[envName];
+  if (fromEnv && fromEnv.length >= 10) return { value: fromEnv, generated: false };
+  return { value: randomBytes(12).toString("base64url"), generated: true };
+}
+
 async function main() {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_SEED_IN_PRODUCTION !== "true") {
+    throw new Error(
+      "O seed cria contas de teste e nao deve correr em producao. " +
+        "Defina ALLOW_SEED_IN_PRODUCTION=true apenas se tiver a certeza."
+    );
+  }
+
   console.log("Seeding database...");
 
   // Create users
-  const adminPassword = await bcrypt.hash("admin123", 12);
-  const gerentePassword = await bcrypt.hash("gerente123", 12);
-  const funcPassword = await bcrypt.hash("func123", 12);
+  const adminPw = resolvePassword("SEED_ADMIN_PASSWORD");
+  const gerentePw = resolvePassword("SEED_GERENTE_PASSWORD");
+  const funcPw = resolvePassword("SEED_FUNCIONARIO_PASSWORD");
+
+  const adminPassword = await bcrypt.hash(adminPw.value, 12);
+  const gerentePassword = await bcrypt.hash(gerentePw.value, 12);
+  const funcPassword = await bcrypt.hash(funcPw.value, 12);
+
+  const generatedPasswords: string[] = [];
+  if (adminPw.generated) generatedPasswords.push(`admin@stockpro.com: ${adminPw.value}`);
+  if (gerentePw.generated) generatedPasswords.push(`gerente@stockpro.com: ${gerentePw.value}`);
+  if (funcPw.generated) generatedPasswords.push(`funcionario@stockpro.com: ${funcPw.value}`);
+  if (generatedPasswords.length > 0) {
+    console.log("Senhas geradas (guarde-as agora, nao serao mostradas outra vez):");
+    generatedPasswords.forEach((line) => console.log("  " + line));
+  }
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@stockpro.com" },
