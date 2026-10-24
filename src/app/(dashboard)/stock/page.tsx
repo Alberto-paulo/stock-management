@@ -23,6 +23,31 @@ interface Product {
   minQuantity: number;
 }
 
+type SortOption =
+  | "name-asc"
+  | "name-desc"
+  | "sell-desc"
+  | "sell-asc"
+  | "buy-desc"
+  | "buy-asc";
+
+type StatusFilter = "all" | "normal" | "low";
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "name-asc", label: "Nome (A-Z)" },
+  { value: "name-desc", label: "Nome (Z-A)" },
+  { value: "sell-desc", label: "Preço de venda (maior → menor)" },
+  { value: "sell-asc", label: "Preço de venda (menor → maior)" },
+  { value: "buy-desc", label: "Preço de compra (maior → menor)" },
+  { value: "buy-asc", label: "Preço de compra (menor → maior)" },
+];
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "Todos" },
+  { value: "normal", label: "Normal" },
+  { value: "low", label: "Baixo" },
+];
+
 export default function StockPage() {
   const { data: session } = useSession();
   const [products, setProducts] = useState<Product[]>([]);
@@ -33,6 +58,8 @@ export default function StockPage() {
   const [deleteProductName, setDeleteProductName] = useState<string>("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<SortOption>("name-asc");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [form, setForm] = useState({
     name: "",
     category: "",
@@ -143,11 +170,35 @@ export default function StockPage() {
     setDeleteProductName(product.name);
   };
 
-  const filtered = products.filter(
-    (p) =>
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.category.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = products
+    .filter(
+      (p) =>
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        p.category.toLowerCase().includes(search.toLowerCase())
+    )
+    .filter((p) => {
+      if (statusFilter === "low") return p.quantity <= p.minQuantity;
+      if (statusFilter === "normal") return p.quantity > p.minQuantity;
+      return true;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case "name-asc":
+          return a.name.localeCompare(b.name, "pt", { sensitivity: "base" });
+        case "name-desc":
+          return b.name.localeCompare(a.name, "pt", { sensitivity: "base" });
+        case "sell-desc":
+          return b.sellPrice - a.sellPrice;
+        case "sell-asc":
+          return a.sellPrice - b.sellPrice;
+        case "buy-desc":
+          return b.buyPrice - a.buyPrice;
+        case "buy-asc":
+          return a.buyPrice - b.buyPrice;
+        default:
+          return 0;
+      }
+    });
 
   const lowStock = products.filter((p) => p.quantity <= p.minQuantity);
 
@@ -237,13 +288,37 @@ export default function StockPage() {
         </Card>
       )}
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <Input
           placeholder="Pesquisar por nome ou categoria..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-sm"
         />
+        <select
+          className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm lg:w-72"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortOption)}
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <div className="flex gap-2">
+          {STATUS_FILTERS.map((f) => (
+            <Button
+              key={f.value}
+              type="button"
+              size="sm"
+              variant={statusFilter === f.value ? "default" : "outline"}
+              onClick={() => setStatusFilter(f.value)}
+            >
+              {f.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       <Card>
