@@ -64,6 +64,14 @@ interface FreeItem {
   unitPrice: string;
 }
 
+type Period = "daily" | "weekly" | "monthly";
+
+const PERIODS: { value: Period; label: string }[] = [
+  { value: "daily", label: "Diario" },
+  { value: "weekly", label: "Semanal" },
+  { value: "monthly", label: "Mensal" },
+];
+
 export default function PurchasesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -80,12 +88,14 @@ export default function PurchasesPage() {
   ]);
   const [notes, setNotes] = useState<string>("");
   const [dateFilter, setDateFilter] = useState<string>("");
+  const [period, setPeriod] = useState<Period>("daily");
 
   const fetchData = useCallback(async () => {
     try {
-      const query = dateFilter ? `?date=${dateFilter}` : "";
+      const params = new URLSearchParams({ period });
+      if (dateFilter) params.set("date", dateFilter);
       const [purchasesRes, productsRes] = await Promise.all([
-        fetch(`/api/purchases${query}`),
+        fetch(`/api/purchases?${params.toString()}`),
         fetch("/api/products"),
       ]);
       if (purchasesRes.ok) setPurchases(await purchasesRes.json());
@@ -95,7 +105,7 @@ export default function PurchasesPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFilter]);
+  }, [dateFilter, period]);
 
   useEffect(() => {
     fetchData();
@@ -203,6 +213,13 @@ export default function PurchasesPage() {
     0
   );
 
+  const dateLabel =
+    period === "daily"
+      ? "Dia"
+      : period === "weekly"
+      ? "Semana que contem o dia"
+      : "Mes que contem o dia";
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -215,7 +232,7 @@ export default function PurchasesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Compras Diarias</h1>
+          <h1 className="text-3xl font-bold">Compras</h1>
           <p className="text-slate-500">Registe as compras da empresa</p>
         </div>
         <Dialog
@@ -485,6 +502,21 @@ export default function PurchasesPage() {
         </Dialog>
       </div>
 
+      {/* Filtro de periodo */}
+      <div className="flex gap-2">
+        {PERIODS.map((p) => (
+          <Button
+            key={p.value}
+            type="button"
+            size="sm"
+            variant={period === p.value ? "default" : "outline"}
+            onClick={() => setPeriod(p.value)}
+          >
+            {p.label}
+          </Button>
+        ))}
+      </div>
+
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
@@ -503,9 +535,7 @@ export default function PurchasesPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              Filtrar por Data
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{dateLabel}</CardTitle>
           </CardHeader>
           <CardContent>
             <Input
@@ -513,6 +543,7 @@ export default function PurchasesPage() {
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
             />
+            <p className="mt-1 text-xs text-slate-500">Vazio = periodo actual</p>
           </CardContent>
         </Card>
       </div>
